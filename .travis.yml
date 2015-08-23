@@ -5,8 +5,6 @@ env:
   global:
     - SAMP_SERVER_ROOT=$TRAVIS_BUILD_DIR/samp03
     - PATH=$TRAVIS_BUILD_DIR/samp-server-cli:$PATH
-    - CXX=g++-4.8
-    - CC=gcc-4.8
   matrix:
     - STATIC_BUILD=ON
     - STATIC_BUILD=OFF
@@ -30,6 +28,7 @@ before_install:
   - tar xzf boost_1_57_0.tar.gz
 
 install:
+  - export CXX="g++-4.8" CC="gcc-4.8"
   - cd mysql-connector-c-6.1.6-src/
   - cmake . -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DCMAKE_INSTALL_PREFIX=/usr -DINSTALL_LAYOUT=DEB > /dev/null
   - make -j2 > /dev/null
