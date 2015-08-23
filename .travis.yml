@@ -17,6 +17,7 @@ addons:
     packages:
     - g++-4.8-multilib
     - cmake
+    - linux-libc-dev:i386
 
 before_install:
   - wget http://dev.mysql.com/get/Downloads/Connector-C/mysql-connector-c-6.1.6-src.tar.gz
