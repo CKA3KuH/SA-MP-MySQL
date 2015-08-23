@@ -31,8 +31,8 @@ before_install:
 install:
   - export CXX="g++-4.8" CC="gcc-4.8"
   - cd mysql-connector-c-6.1.6-src/
-  - cmake . -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DCMAKE_INSTALL_PREFIX=/usr -DINSTALL_LAYOUT=DEB > /dev/null
-  - make -j2 > /dev/null
+  - cmake . -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DCMAKE_INSTALL_PREFIX=$HOME/mysql-con -DINSTALL_LAYOUT=DEB > /dev/null
+  - make -j3 > /dev/null
   - make install > /dev/null
   - cd ..
   - cd boost_1_57_0/
@@ -43,7 +43,7 @@ install:
 before_script:
   - mysql -e "CREATE DATABASE IF NOT EXISTS test;" -uroot
   - git submodule update --recursive --init
-  - cmake . -DCMAKE_INSTALL_PREFIX=${SAMP_SERVER_ROOT} -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_STATIC=${STATIC_BUILD}
+  - cmake . -DMYSQLCAPI_ROOT_DIR=$HOME/mysql-con -DCMAKE_INSTALL_PREFIX=${SAMP_SERVER_ROOT} -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_STATIC=${STATIC_BUILD}
 
 script:
   - make -j2
