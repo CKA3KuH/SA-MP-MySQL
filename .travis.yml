@@ -19,8 +19,8 @@ addons:
 
 before_install:
   - wget http://www.cmake.org/files/v2.8/cmake-2.8.12.2-Linux-i386.sh
-  - sh cmake-2.8.12.2-Linux-i386.sh --exclude-subdir --prefix=$HOME/cmake
-  - export PATH=$HOME/cmake/bin:$PATH
+  - sh cmake-2.8.12.2-Linux-i386.sh --exclude-subdir --prefix=$TRAVIS_BUILD_DIR/cmake
+  - export PATH=$TRAVIS_BUILD_DIR/cmake/bin:$PATH
   - wget http://dev.mysql.com/get/Downloads/Connector-C/mysql-connector-c-6.1.6-src.tar.gz
   - tar xzf mysql-connector-c-6.1.6-src.tar.gz
   - wget http://files.sa-mp.com/samp03zsvr_R4.tar.gz
@@ -32,19 +32,19 @@ before_install:
 install:
   - export CXX="g++-4.8" CC="gcc-4.8"
   - cd mysql-connector-c-6.1.6-src/
-  - cmake . -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DCMAKE_INSTALL_PREFIX=$HOME/mysql-con -DINSTALL_LAYOUT=DEB > /dev/null
+  - cmake . -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DCMAKE_INSTALL_PREFIX=$TRAVIS_BUILD_DIR/mysql-con -DINSTALL_LAYOUT=DEB > /dev/null
   - make -j3 > /dev/null
   - make install > /dev/null
   - cd ..
   - cd boost_1_57_0/
-  - bash bootstrap.sh --prefix=$HOME/boost --with-libraries=system,chrono,thread,date_time,atomic,filesystem
+  - bash bootstrap.sh --prefix=$TRAVIS_BUILD_DIR/boost --with-libraries=system,chrono,thread,date_time,atomic,filesystem
   - ./b2 variant=release link=static threading=multi address-model=32 runtime-link=shared -j3 -d0 install
   - cd ..
 
 before_script:
   - mysql -e "CREATE DATABASE IF NOT EXISTS test;" -uroot
   - git submodule update --recursive --init
-  - cmake . -DMYSQLCAPI_ROOT_DIR=$HOME/mysql-con -DBOOST_ROOT=$HOME/boost -DCMAKE_INSTALL_PREFIX=${SAMP_SERVER_ROOT} -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_STATIC=${STATIC_BUILD}
+  - cmake . -DMYSQLCAPI_ROOT_DIR=$TRAVIS_BUILD_DIR/mysql-con -DBOOST_ROOT=$TRAVIS_BUILD_DIR/boost -DCMAKE_INSTALL_PREFIX=${SAMP_SERVER_ROOT} -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_STATIC=${STATIC_BUILD}
 
 script:
   - make -j2
