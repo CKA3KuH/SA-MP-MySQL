@@ -1,7 +1,5 @@
 language: cpp
-sudo: required
-services:
-  - docker
+sudo: false
 
 env:
   global:
@@ -16,6 +14,7 @@ addons:
     packages:
     - g++-4.8-multilib
     - linux-libc-dev:i386
+    - cmake
 
 before_install:
   - wget http://dev.mysql.com/get/Downloads/Connector-C/mysql-connector-c-6.1.6-src.tar.gz
