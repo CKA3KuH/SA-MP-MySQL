@@ -13,16 +13,11 @@ env:
 
 addons:
   apt:
-    sources:
-    - ubuntu-toolchain-r-test
     packages:
     - g++-4.8-multilib
     - linux-libc-dev:i386
 
 before_install:
-  - wget http://www.cmake.org/files/v2.8/cmake-2.8.12.2-Linux-i386.sh
-  - sh cmake-2.8.12.2-Linux-i386.sh --exclude-subdir --prefix=$TRAVIS_BUILD_DIR/cmake
-  - export PATH=$TRAVIS_BUILD_DIR/cmake/bin:$PATH
   - wget http://dev.mysql.com/get/Downloads/Connector-C/mysql-connector-c-6.1.6-src.tar.gz
   - tar xzf mysql-connector-c-6.1.6-src.tar.gz
   - wget http://files.sa-mp.com/samp03zsvr_R4.tar.gz
