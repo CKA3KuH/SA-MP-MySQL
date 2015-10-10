@@ -13,7 +13,7 @@ addons:
   apt:
     sources:
     - ubuntu-toolchain-r-test
-    - kubuntu-ppa/backports
+    - kubuntu-backports
     packages:
     - g++-4.8-multilib
     - linux-libc-dev:i386
