@@ -11,14 +11,15 @@ env:
 
 addons:
   apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    - kubuntu-ppa/backports
     packages:
     - g++-4.8-multilib
     - linux-libc-dev:i386
     - cmake
 
 before_install:
-  
-  
   - wget http://dev.mysql.com/get/Downloads/Connector-C/mysql-connector-c-6.1.6-src.tar.gz
   - tar xzf mysql-connector-c-6.1.6-src.tar.gz
   
@@ -56,7 +57,7 @@ before_script:
   - cmake . -DMYSQLCAPI_ROOT_DIR=$TRAVIS_BUILD_DIR/mysql-con -DBOOST_ROOT=$TRAVIS_BUILD_DIR/boost -DCMAKE_INSTALL_PREFIX=${SAMP_SERVER_ROOT} -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_STATIC=${STATIC_BUILD}
   
 script:
-  - make -j2
+  - make -j3
   - make install
   # tests
   - pawncc tests/unit_test.pwn -Z+ -\; -\( -i${SAMP_SERVER_ROOT}/pawno/include -itests/include -ounit_test
