@@ -1,45 +1,57 @@
 #include "CCallback.hpp"
+#include "CLog.hpp"
 
 #include <map>
 
 
-Callback_t CCallback::Create(
-	AMX *amx, string name, string format, cell *params, cell param_offset, CCallback::Error &error)
+const string CCallback::ModuleName{ "callback" };
+
+
+Callback_t CCallback::Create(AMX *amx, string name, string format, 
+	cell *params, cell param_offset, CError<CCallback> &error)
 {
-	error = CCallback::Error::NONE;
+	CLog::Get()->Log(LOGLEVEL::DEBUG,
+		"CCallback::Create(amx={}, name='{}', format='{}, params={}, param_offset={})",
+		static_cast<const void *>(amx), name, format, static_cast<const void *>(params), param_offset);
+
+	CLog::Get()->Log(LOGLEVEL::INFO, "Setting up callback '{}' for delayed execution...", name);
+	
 	if (amx == nullptr)
 	{
-		error = CCallback::Error::INVALID_AMX;
+		error.set(Error::INVALID_AMX, "invalid AMX");
 		return nullptr;
 	}
 
 	if (params == nullptr)
 	{
-		error = CCallback::Error::INVALID_PARAMETERS;
+		error.set(Error::INVALID_PARAMETERS, "invalid parameters");
 		return nullptr;
 	}
 
 	if (name.empty())
 	{
-		error = CCallback::Error::EMPTY_NAME;
+		error.set(Error::EMPTY_NAME, "empty name specified");
 		return nullptr;
 	}
-
 
 	int cb_idx = -1;
 	if (amx_FindPublic(amx, name.c_str(), &cb_idx) != AMX_ERR_NONE)
 	{
-		error = CCallback::Error::NOT_FOUND;
+		error.set(Error::NOT_FOUND, "callback \"{}\" does not exist", name);
 		return nullptr;
 	}
 
+	CLog::Get()->Log(LOGLEVEL::DEBUG, "CCallback::Create - callback index for '{}': {}",
+		name, cb_idx);
 
-	CCallback::ParamList_t param_list;
+
+	ParamList_t param_list(format.length());
 	if (format.empty() == false)
 	{
 		if (static_cast<cell>(params[0] / sizeof(cell)) < param_offset)
 		{
-			error = CCallback::Error::INVALID_PARAM_OFFSET;
+			error.set(Error::INVALID_PARAM_OFFSET, 
+				"parameter count does not match format specifier length");
 			return nullptr;
 		}
 
@@ -50,6 +62,13 @@ Callback_t CCallback::Create(
 
 		for (auto c = format.begin(); c != format.end(); ++c)
 		{
+			if (array_addr_ptr != nullptr && (*c) != 'd' && (*c) != 'i')
+			{
+				error.set(Error::EXPECTED_ARRAY_SIZE, 
+					"expected 'd'/'i' specifier for array size (got '{}' instead)", *c);
+				return nullptr;
+			}
+
 			switch (*c)
 			{
 			case 'd': //decimal
@@ -61,54 +80,34 @@ Callback_t CCallback::Create(
 				{
 					if (value <= 0)
 					{
-						//TODO: error: invalid array size
+						error.set(Error::INVALID_ARRAY_SIZE, "invalid array size '{}'", value);
 						return nullptr;
 					}
 					cell *copied_array = static_cast<cell *>(malloc(value * sizeof(cell)));
 					memcpy(copied_array, array_addr_ptr, value * sizeof(cell));
 
-					param_list.push(std::make_tuple('a', std::make_tuple(copied_array, value)));
+					param_list.push_front(std::make_tuple('a', std::make_tuple(copied_array, value)));
 					array_addr_ptr = nullptr;
 				}
-				param_list.push(std::make_tuple('c', value));
+				param_list.push_front(std::make_tuple('c', value));
 			}	break;
 			case 'f': //float
 			case 'b': //bool
-				if (array_addr_ptr != nullptr)
-				{
-					//TODO: error: expected 'd'/'i' specifier for array size
-					return nullptr;
-				}
 				amx_GetAddr(amx, params[param_offset + param_idx], &address_ptr);
-				param_list.push(std::make_tuple('c', *address_ptr));
+				param_list.push_front(std::make_tuple('c', *address_ptr));
 				break;
 			case 's': //string
-				if (array_addr_ptr != nullptr)
-				{
-					//TODO: error: expected 'd'/'i' specifier for array size
-					return nullptr;
-				}
-				param_list.push(std::make_tuple('s', amx_GetCppString(amx, params[param_offset + param_idx])));
+				param_list.push_front(std::make_tuple('s', amx_GetCppString(amx, params[param_offset + param_idx])));
 				break;
 			case 'a': //array
-				if (array_addr_ptr != nullptr)
-				{
-					//TODO: error: expected 'd'/'i' specifier for array size
-					return nullptr;
-				}
 				amx_GetAddr(amx, params[param_offset + param_idx], &array_addr_ptr);
 				break;
 			case 'r': //reference
-				if (array_addr_ptr != nullptr)
-				{
-					//TODO: error: expected 'd'/'i' specifier for array size
-					return nullptr;
-				}
 				amx_GetAddr(amx, params[param_offset + param_idx], &address_ptr);
-				param_list.push(std::make_tuple('r', address_ptr));
+				param_list.push_front(std::make_tuple('r', address_ptr));
 				break;
 			default:
-				error = CCallback::Error::INVALID_FORMAT_SPECIFIER;
+				error.set(Error::INVALID_FORMAT_SPECIFIER, "invalid format specifier '{}'", *c);
 				return nullptr;
 			}
 			param_idx++;
@@ -116,10 +115,12 @@ Callback_t CCallback::Create(
 
 		if (array_addr_ptr != nullptr)
 		{
-			//TODO: error: no length specified after 'a' specifier
+			error.set(Error::NO_ARRAY_SIZE, "no array size specified after 'a' specifier");
 			return nullptr;
 		}
 	}
+
+	CLog::Get()->Log(LOGLEVEL::INFO, "Callback successfully set up.");
 
 	return std::make_shared<CCallback>(amx, cb_idx, std::move(param_list));
 }
@@ -127,22 +128,31 @@ Callback_t CCallback::Create(
 
 bool CCallback::Execute()
 {
+	CLog::Get()->Log(LOGLEVEL::DEBUG, "CCallback::Execute(amx={}, index={}, num_params={})",
+		static_cast<const void *>(m_AmxInstance), m_AmxCallbackIndex, m_Params.size());
+
 	//the user could unload a filterscript between CCallback creation and
 	//execution, so we better check if the AMX instance is still valid
 	if (CCallbackManager::Get()->IsValidAmx(m_AmxInstance) == false)
+	{
+		CLog::Get()->Log(LOGLEVEL::ERROR, "CCallback::Execute - invalid AMX instance");
 		return false;
+	}
 
-	if (m_Executed == true)
-		return false; //can't execute the same callback more than once because m_Params is emptied
+	char callback_name[sNAMEMAX + 1];
+	if (amx_GetPublic(m_AmxInstance, m_AmxCallbackIndex, callback_name) == AMX_ERR_NONE)
+	{
+		CLog::Get()->Log(LOGLEVEL::INFO, "Executing callback '{}' with {} parameter{}...",
+			callback_name, m_Params.size(), m_Params.size() > 1 ? "s" : ""); 
+	}
 
 
 	cell amx_address = -1;
-	while (m_Params.empty() == false)
+	for(auto &i : m_Params)
 	{
 		cell tmp_addr;
-		auto &param = m_Params.top();
-		boost::any &param_val = std::get<1>(param);
-		switch (std::get<0>(param))
+		boost::any &param_val = std::get<1>(i);
+		switch (std::get<0>(i))
 		{
 			case 'c': //cell
 				amx_Push(m_AmxInstance, boost::any_cast<cell>(param_val));
@@ -169,33 +179,13 @@ bool CCallback::Execute()
 				amx_PushAddress(m_AmxInstance, boost::any_cast<cell *>(param_val));
 				break;
 		}
-		m_Params.pop();
 	}
 
 	amx_Exec(m_AmxInstance, nullptr, m_AmxCallbackIndex);
 	if (amx_address >= 0)
 		amx_Release(m_AmxInstance, amx_address);
 
-	m_Executed = true;
+	CLog::Get()->Log(LOGLEVEL::INFO, "Callback successfully executed.");
+
 	return true;
-}
-
-bool CCallbackManager::GetErrorString(CCallback::Error error, string &dest)
-{
-	static const std::map<CCallback::Error, string> error_list{
-			{ CCallback::Error::INVALID_AMX, "invalid AMX" },
-			{ CCallback::Error::INVALID_PARAMETERS, "invalid parameters" },
-			{ CCallback::Error::INVALID_PARAM_OFFSET, "parameter count does not match format specifier length" },
-			{ CCallback::Error::INVALID_FORMAT_SPECIFIER, "invalid format specifier" },
-			{ CCallback::Error::EMPTY_NAME, "empty name specified" },
-			{ CCallback::Error::NOT_FOUND, "callback does not exist" }
-	};
-
-	auto error_it = error_list.find(error);
-	if (error_it != error_list.end())
-	{
-		dest = error_it->second;
-		return true;
-	}
-	return false;
 }

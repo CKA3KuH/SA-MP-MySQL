@@ -8,7 +8,6 @@
 #include "misc.hpp"
 
 #include <fstream>
-#include <boost/filesystem.hpp>
 
 
 // native ORM:orm_create(const table[], MySQL:handle = MYSQL_DEFAULT_HANDLE);
@@ -106,12 +105,17 @@ AMX_DECLARE_NATIVE(Native::mysql_log)
 // native MySQL:mysql_connect(const host[], const user[], const password[], const database[], MySQLOpt:option_id = MySQLOpt:0);
 AMX_DECLARE_NATIVE(Native::mysql_connect)
 {
-	auto *options = COptionManager::Get()->GetOptionHandle(params[5]);
+	CScopedDebugInfo dbg_info(amx, "mysql_connect", "ss*sd");
+	OptionsId_t options_id = static_cast<OptionsId_t>(params[5]);
+	auto *options = COptionManager::Get()->GetOptionHandle(options_id);
 	if (options == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid option id '{}'", options_id);
 		return 0;
+	}
 
-	CHandle::Error handle_error;
-	CHandle *handle = CHandleManager::Get()->Create(
+	CError<CHandle> handle_error;
+	Handle_t handle = CHandleManager::Get()->Create(
 		amx_GetCppString(amx, params[1]),
 		amx_GetCppString(amx, params[2]),
 		amx_GetCppString(amx, params[3]),
@@ -119,8 +123,11 @@ AMX_DECLARE_NATIVE(Native::mysql_connect)
 		options,
 		handle_error);
 
-	if (handle_error != CHandle::Error::NONE)
-		return 0; //TODO: error message
+	if (handle_error)
+	{
+		CLog::Get()->LogNative(handle_error);
+		return 0;
+	}
 
 	assert(handle != nullptr);
 
@@ -130,18 +137,22 @@ AMX_DECLARE_NATIVE(Native::mysql_connect)
 // native MySQL:mysql_connect_file(const file_name[] = "mysql.ini");
 AMX_DECLARE_NATIVE(Native::mysql_connect_file)
 {
+	CScopedDebugInfo dbg_info(amx, "mysql_connect_file", "s");
 	string file_name = amx_GetCppString(amx, params[1]);
-	boost::filesystem::path current_path = boost::filesystem::current_path();
-	current_path.append(file_name);
-	//restrict file access; the file has to be in the same directory as the SA-MP server
-	if (boost::filesystem::exists(current_path) == false)
+	if (file_name.find_first_of("/\\") != string::npos) //no directory seperators allowed
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "file \"{}\" not in SA - MP root folder", file_name);
 		return 0;
+	}
 
-	CHandle::Error handle_error;
-	CHandle *handle = CHandleManager::Get()->CreateFromFile(file_name, handle_error);
+	CError<CHandle> handle_error;
+	Handle_t handle = CHandleManager::Get()->CreateFromFile(file_name, handle_error);
 
-	if (handle_error != CHandle::Error::NONE)
-		return 0; //TODO: error message
+	if (handle_error)
+	{
+		CLog::Get()->LogNative(handle_error);
+		return 0;
+	}
 
 	assert(handle != nullptr);
 
@@ -151,9 +162,14 @@ AMX_DECLARE_NATIVE(Native::mysql_connect_file)
 // native mysql_close(MySQL:handle = MYSQL_DEFAULT_HANDLE);
 AMX_DECLARE_NATIVE(Native::mysql_close)
 {
-	CHandle *handle = CHandleManager::Get()->GetHandle(static_cast<HandleId_t>(params[1]));
+	CScopedDebugInfo dbg_info(amx, "mysql_close", "d");
+	const HandleId_t handle_id = static_cast<HandleId_t>(params[1]);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 
 	return CHandleManager::Get()->Destroy(handle);
 }
@@ -167,10 +183,12 @@ AMX_DECLARE_NATIVE(Native::mysql_unprocessed_queries)
 // native mysql_global_options(E_MYSQL_GLOBAL_OPTION:type, value);
 AMX_DECLARE_NATIVE(Native::mysql_global_options)
 {
+	CScopedDebugInfo dbg_info(amx, "mysql_global_options", "dd");
 	switch (static_cast<COptionManager::GlobalOption>(params[1]))
 	{
 	case COptionManager::GlobalOption::DUPLICATE_CONNECTIONS:
-		COptionManager::Get()->SetGlobalOption(COptionManager::GlobalOption::DUPLICATE_CONNECTIONS, params[2] != 0);
+		COptionManager::Get()->SetGlobalOption(
+			COptionManager::GlobalOption::DUPLICATE_CONNECTIONS, params[2] != 0);
 		break;
 	default:
 		return 0;
@@ -181,20 +199,29 @@ AMX_DECLARE_NATIVE(Native::mysql_global_options)
 // native MySQLOpt:mysql_init_options();
 AMX_DECLARE_NATIVE(Native::mysql_init_options)
 {
+	CScopedDebugInfo dbg_info(amx, "mysql_init_options");
 	return COptionManager::Get()->Create();
 }
 
 // native mysql_set_option(MySQLOpt:option_id, E_MYSQL_OPTION:type, ...);
 AMX_DECLARE_NATIVE(Native::mysql_set_option)
 {
-	auto *options = COptionManager::Get()->GetOptionHandle(params[1]);
+	CScopedDebugInfo dbg_info(amx, "mysql_set_option", "dd");
+	OptionsId_t options_id = static_cast<OptionsId_t>(params[1]);
+	auto *options = COptionManager::Get()->GetOptionHandle(options_id);
 	if (options == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid option id '{}'", options_id);
 		return 0;
+	}
 
 	cell *param_addr = nullptr;
 	amx_GetAddr(amx, params[3], &param_addr);
 	if (param_addr == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "no value specified");
 		return 0;
+	}
 
 	cell value = *param_addr;
 	bool ret_val = false;
@@ -208,16 +235,18 @@ AMX_DECLARE_NATIVE(Native::mysql_set_option)
 		ret_val = options->SetOption(COptions::Type::MULTI_STATEMENTS, static_cast<bool>(value != 0));
 		break;
 	case COptions::Type::POOL_SIZE:
-		if (params[3] >= 32)
+		if (value >= 0 && value <= 32)
 			ret_val = options->SetOption(COptions::Type::POOL_SIZE, static_cast<unsigned int>(value));
 		else
-			; //TODO: error
+			CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid pool size '{}'", value);
+
 		break;
 	case COptions::Type::SERVER_PORT:
-		if (params[3] <= std::numeric_limits<unsigned short>::max())
+		if (value >= 0 && value <= std::numeric_limits<unsigned short>::max())
 			ret_val = options->SetOption(COptions::Type::SERVER_PORT, static_cast<unsigned int>(value));
 		else
-			; //TODO: error
+			CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid MySQL server port '{}'", value);
+
 		break;
 	}
 	return ret_val;
@@ -232,13 +261,17 @@ AMX_DECLARE_NATIVE(Native::mysql_pquery)
 // native mysql_tquery(MySQL:handle, const query[], const callback[] = "", const format[] = "", {Float,_}:...);
 AMX_DECLARE_NATIVE(Native::mysql_tquery)
 {
+	CScopedDebugInfo dbg_info(amx, "mysql_tquery", "dsss");
 	const HandleId_t handle_id = static_cast<HandleId_t>(params[1]);
-	CHandle *handle = CHandleManager::Get()->GetHandle(handle_id);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 
-	CCallback::Error callback_error;
+	CError<CCallback> callback_error;
 	Callback_t callback = CCallback::Create(
 		amx, 
 		amx_GetCppString(amx, params[3]),
@@ -246,9 +279,11 @@ AMX_DECLARE_NATIVE(Native::mysql_tquery)
 		params, 5,
 		callback_error);
 
-	if (callback_error != CCallback::Error::NONE &&
-		callback_error != CCallback::Error::EMPTY_NAME)
-		return 0; // TODO: log error with CCallbackManager::GetErrorString
+	if (callback_error && callback_error.type() != CCallback::Error::EMPTY_NAME)
+	{
+		CLog::Get()->LogNative(callback_error);
+		return 0;
+	}
 	
 
 	Query_t query = CQuery::Create(amx_GetCppString(amx, params[2]));
@@ -277,11 +312,15 @@ AMX_DECLARE_NATIVE(Native::mysql_query)
 // native mysql_query_file(MySQL:handle, const file_path[]);
 AMX_DECLARE_NATIVE(Native::mysql_query_file)
 {
+	CScopedDebugInfo dbg_info(amx, "mysql_query_file", "ds");
 	const HandleId_t handle_id = static_cast<HandleId_t>(params[1]);
-	CHandle *handle = CHandleManager::Get()->GetHandle(handle_id);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 
 	std::ifstream file(amx_GetCppString(amx, params[2]));
 	if (file.fail())
@@ -335,9 +374,14 @@ AMX_DECLARE_NATIVE(Native::mysql_query_file)
 // native mysql_errno(MySQL:handle = MYSQL_DEFAULT_HANDLE);
 AMX_DECLARE_NATIVE(Native::mysql_errno)
 {
-	CHandle *handle = CHandleManager::Get()->GetHandle(static_cast<HandleId_t>(params[1]));
+	CScopedDebugInfo dbg_info(amx, "mysql_errno", "d");
+	const HandleId_t handle_id = static_cast<HandleId_t>(params[1]);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return -1;
+	}
 
 	unsigned int errorid = 0;
 	if (handle->GetErrorId(errorid) == false)
@@ -355,9 +399,14 @@ AMX_DECLARE_NATIVE(Native::mysql_format)
 // native mysql_escape_string(const source[], destination[], max_len = sizeof(destination), MySQL:handle = MYSQL_DEFAULT_HANDLE);
 AMX_DECLARE_NATIVE(Native::mysql_escape_string)
 {
-	CHandle *handle = CHandleManager::Get()->GetHandle(static_cast<HandleId_t>(params[4]));
+	CScopedDebugInfo dbg_info(amx, "mysql_escape_string", "srdd");
+	const HandleId_t handle_id = static_cast<HandleId_t>(params[4]);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 
 	string escaped_str;
 	if (handle->EscapeString(amx_GetCppString(amx, params[1]), escaped_str) == false)
@@ -374,9 +423,14 @@ AMX_DECLARE_NATIVE(Native::mysql_escape_string)
 // native mysql_set_charset(const charset[], MySQL:handle = MYSQL_DEFAULT_HANDLE);
 AMX_DECLARE_NATIVE(Native::mysql_set_charset)
 {
-	CHandle *handle = CHandleManager::Get()->GetHandle(static_cast<HandleId_t>(params[2]));
+	CScopedDebugInfo dbg_info(amx, "mysql_set_charset", "sd");
+	const HandleId_t handle_id = static_cast<HandleId_t>(params[2]);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 	
 	return handle->SetCharacterSet(amx_GetCppString(amx, params[1]));
 }
@@ -384,9 +438,14 @@ AMX_DECLARE_NATIVE(Native::mysql_set_charset)
 // native mysql_get_charset(destination[], max_len = sizeof(destination), MySQL:handle = MYSQL_DEFAULT_HANDLE);
 AMX_DECLARE_NATIVE(Native::mysql_get_charset)
 {
-	CHandle *handle = CHandleManager::Get()->GetHandle(static_cast<HandleId_t>(params[3]));
+	CScopedDebugInfo dbg_info(amx, "mysql_get_charset", "rdd");
+	const HandleId_t handle_id = static_cast<HandleId_t>(params[3]);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 
 	string charset;
 	if (handle->GetCharacterSet(charset) == false)
@@ -403,9 +462,14 @@ AMX_DECLARE_NATIVE(Native::mysql_get_charset)
 // native mysql_stat(destination[], max_len = sizeof(destination), MySQL:handle = MYSQL_DEFAULT_HANDLE);
 AMX_DECLARE_NATIVE(Native::mysql_stat)
 {
-	CHandle *handle = CHandleManager::Get()->GetHandle(static_cast<HandleId_t>(params[3]));
+	CScopedDebugInfo dbg_info(amx, "mysql_stat", "rdd");
+	const HandleId_t handle_id = static_cast<HandleId_t>(params[3]);
+	Handle_t handle = CHandleManager::Get()->GetHandle(handle_id);
 	if (handle == nullptr)
+	{
+		CLog::Get()->LogNative(LOGLEVEL::ERROR, "invalid connection handle '{}'", handle_id);
 		return 0;
+	}
 
 	string status;
 	if (handle->GetStatus(status) == false)
@@ -424,6 +488,7 @@ AMX_DECLARE_NATIVE(Native::mysql_stat)
 // native cache_get_row_count();
 AMX_DECLARE_NATIVE(Native::cache_get_row_count)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_row_count", "");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? static_cast<cell>(resultset->GetActiveResult()->GetRowCount()) : 0;
 }
@@ -431,6 +496,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_row_count)
 // native cache_get_field_count();
 AMX_DECLARE_NATIVE(Native::cache_get_field_count)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_field_count", "");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? resultset->GetActiveResult()->GetFieldCount() : 0;
 }
@@ -438,6 +504,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_field_count)
 // native cache_get_result_count();
 AMX_DECLARE_NATIVE(Native::cache_get_result_count)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_result_count", "");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? resultset->GetResultCount() : 0; 
 }
@@ -445,6 +512,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_result_count)
 // native cache_get_field_name(field_index, destination[], max_len = sizeof(destination))
 AMX_DECLARE_NATIVE(Native::cache_get_field_name)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_field_name", "drd");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -460,6 +528,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_field_name)
 // native cache_set_result(result_index);
 AMX_DECLARE_NATIVE(Native::cache_set_result)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_set_result", "d");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? resultset->SetActiveResult(params[1]) : false;
 }
@@ -468,6 +537,7 @@ AMX_DECLARE_NATIVE(Native::cache_set_result)
 // native cache_get_row(row_idx, field_idx, destination[], max_len=sizeof(destination));
 AMX_DECLARE_NATIVE(Native::cache_get_row)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_row", "ddrd");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -483,6 +553,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_row)
 // native cache_get_row_int(row_idx, field_idx);
 AMX_DECLARE_NATIVE(Native::cache_get_row_int)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_row_int", "dd");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -501,6 +572,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_row_int)
 // native Float:cache_get_row_float(row_idx, field_idx);
 AMX_DECLARE_NATIVE(Native::cache_get_row_float)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_row_float", "dd");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -519,6 +591,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_row_float)
 // native cache_get_field_content(row_idx, const field_name[], destination[], max_len=sizeof(destination));
 AMX_DECLARE_NATIVE(Native::cache_get_field_content)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_field_content", "dsrd");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -534,6 +607,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_field_content)
 // native cache_get_field_content_int(row_idx, const field_name[]);
 AMX_DECLARE_NATIVE(Native::cache_get_field_content_int)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_field_content_int", "ds");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -552,6 +626,7 @@ AMX_DECLARE_NATIVE(Native::cache_get_field_content_int)
 // native Float:cache_get_field_content_float(row_idx, const field_name[]);
 AMX_DECLARE_NATIVE(Native::cache_get_field_content_float)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_get_field_content_float", "ds");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	if (resultset == nullptr)
 		return 0;
@@ -570,18 +645,21 @@ AMX_DECLARE_NATIVE(Native::cache_get_field_content_float)
 // native Cache:cache_save();
 AMX_DECLARE_NATIVE(Native::cache_save)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_save", "");
 	return CResultSetManager::Get()->StoreActiveResultSet();
 }
 
 // native cache_delete(Cache:cache_id);
 AMX_DECLARE_NATIVE(Native::cache_delete)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_delete", "d");
 	return CResultSetManager::Get()->DeleteResultSet(params[1]);
 }
 
 // native cache_set_active(Cache:cache_id);
 AMX_DECLARE_NATIVE(Native::cache_set_active)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_set_active", "d");
 	auto resultset = CResultSetManager::Get()->GetResultSet(params[1]);
 	if (resultset)
 		CResultSetManager::Get()->SetActiveResultSet(resultset);
@@ -591,12 +669,14 @@ AMX_DECLARE_NATIVE(Native::cache_set_active)
 // native cache_is_valid(Cache:cache_id);
 AMX_DECLARE_NATIVE(Native::cache_is_valid)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_is_valid", "d");
 	return CResultSetManager::Get()->IsValidResultSet(params[1]);
 }
 
 // native cache_affected_rows();
 AMX_DECLARE_NATIVE(Native::cache_affected_rows)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_affected_rows", "");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? static_cast<cell>(resultset->AffectedRows()) : -1;
 }
@@ -604,6 +684,7 @@ AMX_DECLARE_NATIVE(Native::cache_affected_rows)
 // native cache_warning_count();
 AMX_DECLARE_NATIVE(Native::cache_warning_count)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_warning_count", "");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? resultset->WarningCount() : -1;
 }
@@ -611,6 +692,7 @@ AMX_DECLARE_NATIVE(Native::cache_warning_count)
 // native cache_insert_id();
 AMX_DECLARE_NATIVE(Native::cache_insert_id)
 {
+	CScopedDebugInfo dbg_info(amx, "cache_insert_id", "");
 	auto resultset = CResultSetManager::Get()->GetActiveResultSet();
 	return resultset != nullptr ? static_cast<cell>(resultset->InsertId()) : -1;
 }

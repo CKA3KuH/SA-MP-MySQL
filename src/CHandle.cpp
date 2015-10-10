@@ -1,15 +1,18 @@
+#include <fstream>
+#include <boost/spirit/include/qi.hpp>
+
+#include "mysql.hpp"
+
 #include "CQuery.hpp"
 #include "CHandle.hpp"
 #include "CConnection.hpp"
 #include "COptions.hpp"
 #include "misc.hpp"
 
-#include <fstream>
-#include <boost/spirit/include/qi.hpp>
-
 using namespace boost::spirit;
 
-#include "mysql.hpp"
+
+const string CHandle::ModuleName{ "handle" };
 
 
 CHandle::~CHandle()
@@ -43,9 +46,6 @@ bool CHandle::Execute(ExecutionType type, Query_t query)
 			if (m_MainConnection != nullptr)
 				return_val = m_MainConnection->Execute(query);
 			break;
-
-		default:
-			; //TODO: log error
 		}
 	}
 	return return_val;
@@ -97,19 +97,18 @@ bool CHandle::GetStatus(string &stat)
 
 
 
-CHandle *CHandleManager::Create(string host, string user, string pass, string db,
-	const COptions *options, CHandle::Error &error)
+Handle_t CHandleManager::Create(string host, string user, string pass, string db,
+	const COptions *options, CError<CHandle> &error)
 {
-	error = CHandle::Error::NONE;
 	if (host.empty())
 	{
-		error = CHandle::Error::EMPTY_HOST;
+		error.set(CHandle::Error::EMPTY_HOST, "no hostname specified");
 		return nullptr;
 	}
 
 	if (user.empty())
 	{
-		error = CHandle::Error::EMPTY_USER;
+		error.set(CHandle::Error::EMPTY_USER, "no username specified");
 		return nullptr;
 	}
 
@@ -118,13 +117,13 @@ CHandle *CHandleManager::Create(string host, string user, string pass, string db
 
 	if (db.empty())
 	{
-		error = CHandle::Error::EMPTY_DATABASE;
+		error.set(CHandle::Error::EMPTY_DATABASE, "no database specified");
 		return nullptr;
 	}
 
 	if (options == nullptr)
 	{
-		error = CHandle::Error::INVALID_OPTIONS;
+		error.set(CHandle::Error::INVALID_OPTIONS, "invalid option-handler");
 		return nullptr;
 	}
 
@@ -133,7 +132,7 @@ CHandle *CHandleManager::Create(string host, string user, string pass, string db
 	while (m_Handles.find(id) != m_Handles.end())
 		id++;
 
-	CHandle *handle = new CHandle(id);
+	Handle_t handle = new CHandle(id);
 	
 	handle->m_MainConnection = new CConnection(host, user, pass, db, options);
 	handle->m_ThreadedConnection = new CThreadedConnection(host, user, pass, db, options);
@@ -146,14 +145,13 @@ CHandle *CHandleManager::Create(string host, string user, string pass, string db
 	return handle;
 }
 
-CHandle *CHandleManager::CreateFromFile(string file_path, CHandle::Error &error)
+Handle_t CHandleManager::CreateFromFile(string file_path, CError<CHandle> &error)
 {
-	error = CHandle::Error::NONE;
-
 	std::ifstream file(file_path);
 	if (file.fail())
 	{
-		error = CHandle::Error::INVALID_FILE;
+		error.set(CHandle::Error::INVALID_FILE,
+			"invalid connection file specified (file: \"{}\")", file_path);
 		return nullptr;
 	}
 
@@ -228,13 +226,15 @@ CHandle *CHandleManager::CreateFromFile(string file_path, CHandle::Error &error)
 			}
 			else
 			{
-				error = CHandle::Error::INVALID_FIELD;
+				error.set(CHandle::Error::UNKNOWN_FIELD, 
+					"unknown field in connection file (field: \"{}\")", field);
 				return nullptr;
 			}
 		}
 		else
 		{
-			error = CHandle::Error::SYNTAX_ERROR;
+			error.set(CHandle::Error::SYNTAX_ERROR,
+				"syntax error in connection file (line: \"{}\")", line);
 			return nullptr;
 		}
 	}
@@ -242,7 +242,7 @@ CHandle *CHandleManager::CreateFromFile(string file_path, CHandle::Error &error)
 	return Create(hostname, username, password, database, options, error);
 }
 
-bool CHandleManager::Destroy(CHandle *handle)
+bool CHandleManager::Destroy(Handle_t &handle)
 {
 	if (handle == nullptr)
 		return false;

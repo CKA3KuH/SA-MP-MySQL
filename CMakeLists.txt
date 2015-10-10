@@ -101,39 +101,10 @@ if(MSVC)
 	link_directories("${Boost_LIBRARY_DIRS}")
 endif()
 
-option(LOGCORE_INSTALL OFF)
+option(LOGCORE_INSTALL_DEV OFF)
+mark_as_advanced(LOGCORE_INSTALL_DEV)
 add_subdirectory(libs/samp-log-core)
 
 add_subdirectory(src)
 
 
-if(BUILD_TESTS)
-	enable_testing()
-	include(AddSAMPPluginTest)
-	
-	find_package(SAMPServerCLI REQUIRED)
-	if(WIN32)
-		set(ENV{PATH} "${SAMPServerCLI_DIR};$ENV{PATH}")
-		string(REPLACE ";" "\\$<SEMICOLON>" ENV{PATH} "$ENV{PATH}")
-	else()
-		set(ENV{PATH} "${SAMPServerCLI_DIR}:$ENV{PATH}")
-	endif()
-	
-	file(GLOB
-		_MYSQL_PLUGIN_TEST_DATA 
-		"${PROJECT_SOURCE_DIR}/tests/test_data/*"
-	)
-	#TODO: scriptfiles test data has also to be copied
-	file(GLOB
-		_MYSQL_PLUGIN_TEST_SCRIPTS
-		"${PROJECT_SOURCE_DIR}/tests/*.amx"
-	)
-	file(COPY ${_MYSQL_PLUGIN_TEST_DATA} DESTINATION "$ENV{SAMP_SERVER_ROOT}")
-	file(COPY ${_MYSQL_PLUGIN_TEST_SCRIPTS} DESTINATION "$ENV{SAMP_SERVER_ROOT}/gamemodes")
-	
-	add_samp_plugin_test(mysql-test
-		TARGET mysql
-		SCRIPT "unit_test"
-		TIMEOUT 60
-	)
-endif()

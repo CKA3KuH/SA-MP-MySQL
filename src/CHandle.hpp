@@ -8,6 +8,7 @@
 using std::string;
 using std::unordered_map;
 
+#include "CError.hpp"
 #include "types.hpp"
 
 class CConnection;
@@ -37,8 +38,10 @@ public: //type definitions
 		//file errors
 		INVALID_FILE,
 		SYNTAX_ERROR,
-		INVALID_FIELD,
+		UNKNOWN_FIELD,
 	};
+	static const string ModuleName;
+	
 
 private: //constructor / deconstructor
 	CHandle(HandleId_t id) :
@@ -75,19 +78,19 @@ private: //constructor / deconstructor
 	~CHandleManager() = default;
 
 private: //variables
-	unordered_map<HandleId_t, CHandle *> m_Handles;
+	unordered_map<HandleId_t, Handle_t> m_Handles;
 
 public: //functions
-	CHandle *Create(string host, string user, string pass, string db, 
-		const COptions *options, CHandle::Error &error);
-	CHandle *CreateFromFile(string file_path, CHandle::Error &error);
-	bool Destroy(CHandle *handle);
+	Handle_t Create(string host, string user, string pass, string db, 
+		const COptions *options, CError<CHandle> &error);
+	Handle_t CreateFromFile(string file_path, CError<CHandle> &error);
+	bool Destroy(Handle_t &handle);
 
 	inline bool IsValidHandle(const HandleId_t id)
 	{
 		return m_Handles.find(id) != m_Handles.end();
 	}
-	inline CHandle *GetHandle(const HandleId_t id)
+	inline Handle_t GetHandle(const HandleId_t id)
 	{
 		return IsValidHandle(id) ? m_Handles.at(id) : nullptr;
 	}
