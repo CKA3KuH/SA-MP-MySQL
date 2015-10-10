@@ -32,8 +32,7 @@ before_install:
   - git clone https://github.com/Zeex/samp-server-cli.git
   
   - wget https://github.com/Zeex/pawn/releases/download/20150531/pawnc-3.10.20150531-linux.tar.gz
-  - sudo tar xvf pawnc-3.10.20150531-linux.tar.gz --strip-components=1 -C /usr/local
-  - sudo ldconfig
+  - tar xvf pawnc-3.10.20150531-linux.tar.gz --strip-components=1 -C $TRAVIS_BUILD_DIR/pawnc
   
   - wget http://sourceforge.net/projects/boost/files/boost/1.57.0/boost_1_57_0.tar.gz
   - tar xzf boost_1_57_0.tar.gz
@@ -60,7 +59,7 @@ script:
   - make -j3
   - make install
   # tests
-  - pawncc tests/unit_test.pwn -Z+ -\; -\( -i${SAMP_SERVER_ROOT}/pawno/include -itests/include -ounit_test
+  - $TRAVIS_BUILD_DIR/pawnc/bin/pawncc tests/unit_test.pwn -Z+ -\; -\( -i${SAMP_SERVER_ROOT}/pawno/include -itests/include -ounit_test
   - cp -R tests/test_data/* ${SAMP_SERVER_ROOT}
   - samp-server-cli -o -g unit_test -d mysql.so -T 60
   - ls -laF
