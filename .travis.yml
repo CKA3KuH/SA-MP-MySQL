@@ -60,9 +60,8 @@ before_script:
   - pawncc tests/unit_test.pwn -Z+ -\; -\( -i${SAMP_SERVER_ROOT}/pawno/include -itests/include -ounit_test
   - cp -R tests/test_data/* ${SAMP_SERVER_ROOT}
   - cp *.amx ${SAMP_SERVER_ROOT}/gamemodes
-  
+
 script:
   - make -j3
   - make install
   - samp-server-cli -o -g unit_test -d mysql.so -T 60
-  
