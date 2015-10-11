@@ -34,6 +34,7 @@ before_install:
   - wget https://github.com/Zeex/pawn/releases/download/20150531/pawnc-3.10.20150531-linux.tar.gz
   - mkdir $TRAVIS_BUILD_DIR/pawnc
   - tar xvf pawnc-3.10.20150531-linux.tar.gz --strip-components=1 -C $TRAVIS_BUILD_DIR/pawnc
+  - alias pawncc="LD_LIBRARY_PATH=$TRAVIS_BUILD_DIR/pawnc/lib $TRAVIS_BUILD_DIR/pawnc/bin/pawncc"
   
   - wget http://sourceforge.net/projects/boost/files/boost/1.57.0/boost_1_57_0.tar.gz
   - tar xzf boost_1_57_0.tar.gz
@@ -55,13 +56,13 @@ before_script:
   - mysql -e "CREATE DATABASE IF NOT EXISTS test;" -uroot
   - git submodule update --recursive --init
   - cmake . -DMYSQLCAPI_ROOT_DIR=$TRAVIS_BUILD_DIR/mysql-con -DBOOST_ROOT=$TRAVIS_BUILD_DIR/boost -DCMAKE_INSTALL_PREFIX=${SAMP_SERVER_ROOT} -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_STATIC=${STATIC_BUILD}
+  # tests
+  - pawncc tests/unit_test.pwn -Z+ -\; -\( -i${SAMP_SERVER_ROOT}/pawno/include -itests/include -ounit_test
+  - cp -R tests/test_data/* ${SAMP_SERVER_ROOT}
+  - cp *.amx ${SAMP_SERVER_ROOT}/gamemodes
   
 script:
   - make -j3
   - make install
-  # tests
-  - $TRAVIS_BUILD_DIR/pawnc/bin/pawncc tests/unit_test.pwn -Z+ -\; -\( -i${SAMP_SERVER_ROOT}/pawno/include -itests/include -ounit_test
-  - cp -R tests/test_data/* ${SAMP_SERVER_ROOT}
-  - cp *.amx ${SAMP_SERVER_ROOT}/gamemodes
   - samp-server-cli -o -g unit_test -d mysql.so -T 60
   
